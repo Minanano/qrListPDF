@@ -1,0 +1,51 @@
+@font-face {
+    font-family: 'arial';
+    src: url('../fonts/arial.ttf') format('truetype');
+    font-weight: normal;
+  font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'msyh';
+    src: url('../fonts/msyh.ttc') format('truetype');
+    font-weight: normal;
+  font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'simhei';
+    src: url('../fonts/simhei.ttf') format('truetype');
+    font-weight: normal;
+  font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'simkai';
+    src: url('../fonts/simkai.ttf') format('truetype');
+    font-weight: normal;
+  font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'SIMLI';
+    src: url('../fonts/SIMLI.TTF') format('truetype');
+    font-weight: normal;
+  font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'simsun';
+    src: url('../fonts/simsun.ttc') format('truetype');
+    font-weight: normal;
+  font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'times';
+    src: url('../fonts/times.ttf') format('truetype');
+    font-weight: normal;
+  font-style: normal;
+    font-display: swap;
+  }

@@ -17,12 +17,15 @@ import {
   Collapse,
   ColorPicker,
 } from "antd";
-import { UploadOutlined, FilePdfOutlined, CloseOutlined } from "@ant-design/icons";
+import { UploadOutlined, FilePdfOutlined, CloseOutlined,DeleteOutlined } from "@ant-design/icons";
 import QRCodeStyling from "qr-code-styling";
-import { jsPDF } from "jspdf";
+import { jsPDF } from 'jspdf';
+import { fontBase64Map } from './fonts/registerFonts';
 import * as XLSX from 'xlsx';
 import "antd/dist/reset.css";
 import { PAPER_TYPE } from "./const";
+import QrFontSetting from "./qrFontSetting";
+import './assets/fonts.css';
 
 
 const { Sider, Content } = Layout;
@@ -54,29 +57,7 @@ const options = [
 ];
 
 // 可用的字体（jsPDF 支持的字体 + 常见中文字体）
-const fontOptions = [
-  { value: "helvetica", label: "Helvetica (英文默认)" },
-  { value: "times", label: "Times New Roman" },
-  { value: "courier", label: "Courier" },
-  { value: "simsun", label: "宋体 (SimSun)" },
-  { value: "simhei", label: "黑体 (SimHei)" },
-  { value: "microsoftyahei", label: "微软雅黑 (Microsoft YaHei)" },
-  { value: "kaiti", label: "楷体 (KaiTi)" },
-  { value: "fangsong", label: "仿宋 (FangSong)" },
-];
 
-// 字重选项
-const fontWeightOptions = [
-  { value: 100, label: "100 (极细)" },
-  { value: 200, label: "200" },
-  { value: 300, label: "300 (细体)" },
-  { value: 400, label: "400 (正常)" },
-  { value: 500, label: "500" },
-  { value: 600, label: "600" },
-  { value: 700, label: "700 (粗体)" },
-  { value: 800, label: "800" },
-  { value: 900, label: "900 (黑体)" },
-];
 
 export default function App() {
   const qrItemRef = useRef(null);
@@ -85,11 +66,13 @@ export default function App() {
   const [pageSize, setPageSize] = useState("A4");
   const [orientation, setOrientation] = useState("portrait");
   const [previewScale, setPreviewScale] = useState(85);
-  const [fontSize, setFontSize] = useState(3);
-  const [fontMargin, setFontMargin] = useState(0.5);
+  ;
   const [paperMargin, setPaperMargin] = useState(6);
-  const [qrPadding, setQrPadding] = useState(1.6);
-  const[radioValue,setRadilValue]=useState(1);
+  const [qrPaddingTop, setQrPaddingTop] = useState(1.6);
+  const [qrPaddingBottom, setQrPaddingBottom] = useState(1.6);
+  const [qrPaddingLeft, setQrPaddingLeft] = useState(1.6);
+  const [qrPaddingRight, setQrPaddingRight] = useState(1.6);
+  const [radioValue, setRadilValue] = useState(1);
 
   const [allData, setAllData] = useState([]);
   const [previewQRs, setPreviewQRs] = useState([]);
@@ -102,9 +85,7 @@ export default function App() {
   const abortExportRef = useRef(false);
 
   // 新增文字样式状态
-  const [textFont, setTextFont] = useState("simsun");          // 字体
-  const [textFontWeight, setTextFontWeight] = useState(400);   // 字重
-  const [textColor, setTextColor] = useState("#000000");      // 文字颜色
+
 
   // 新增样式状态
   const [logoUrl, setLogoUrl] = useState(null); // logo 上传后 dataURL
@@ -129,6 +110,52 @@ export default function App() {
   const [cornersDotStyle, setCornersDotStyle] = useState("square");
   const [cornersDotColor, setCornersDotColor] = useState("#000000");
 
+
+  // 1. 新增状态：选择哪一列作为二维码内容（列索引从 0 开始）
+  const [qrContentColumnIndex, setQrContentColumnIndex] = useState(0); // 默认用第1列（索引0）
+  const [dataColNumber, setDataColNumber] = useState(0);//excle中一共有多少列数据，这里假设规定每行数据的列数都必须一样
+
+
+  // 存储所有文字组的配置
+  const [textGroups, setTextGroups] = useState([
+    { id: 1, textFont: "simsun", textFontWeight: 400, textColor: "#000000", fontSize: 3, fontMargin: 0.5, dataTextIndex: 0, coustomTextLabel: "" }
+  ]);
+
+  const addTextGroup = () => {
+    const newId = Date.now(); // 或使用递增计数器
+    setTextGroups(prev => [
+      ...prev,
+      {
+        id: newId,
+        textFont: "simsun",
+        textFontWeight: 400,
+        textColor: "#000000",
+        fontSize: 3,
+        fontMargin: 0.5,
+        dataTextIndex: 0,
+        coustomTextLabel: ""
+      }
+    ]);
+  };
+
+  const updateTextGroup = (id, newValues) => {
+    setTextGroups(prev =>
+      prev.map(group =>
+        group.id === id ? { ...group, ...newValues } : group
+      )
+    );
+  };
+
+  const removeTextGroup = (id) => {
+    if (textGroups.length <= 1) return;
+    setTextGroups(prev => prev.filter(g => g.id !== id));
+  };
+  const textHighTotal = useMemo(() => {
+    return textGroups.reduce((sum, item) => {
+      return sum + item.fontSize + item.fontMargin;
+    }, 0);
+  }, [textGroups])
+
   // 布局计算（保持不变）
   const layout = useMemo(() => {
     const size = PAPER_TYPE[pageSize];
@@ -137,12 +164,14 @@ export default function App() {
     const pageHeightMm = isPortrait ? size.height : size.width;
     const usableWidthMm = pageWidthMm - paperMargin * 2;
     const usableHeightMm = pageHeightMm - paperMargin * 2;
-    const qrUnitWidthMm = qrSize + qrPadding * 2;
+    const qrUnitWidthMm = qrSize + qrPaddingLeft+ qrPaddingRight;
     const maxCols = Math.max(1, Math.floor(usableWidthMm / qrUnitWidthMm));
     let currentCols = qrColNum;
     if (currentCols > maxCols) currentCols = maxCols;
-    const rowHeightMm = qrSize + fontSize + fontMargin + qrPadding * 2;
-    const rows = Math.max(1, Math.floor(usableHeightMm / rowHeightMm));
+    const rowHeightMm = qrSize + qrPaddingTop+qrPaddingBottom;
+
+
+    const rows = Math.max(1, Math.floor(usableHeightMm / (rowHeightMm + textHighTotal)));
     const perPage = currentCols * rows;
 
     return {
@@ -159,7 +188,7 @@ export default function App() {
       qrPixelPrint: Math.floor((qrSize / 25.4) * PRINT_DPI),
       qrPixelPreview: Math.floor((qrSize / 25.4) * PREVIEW_DPI),
     };
-  }, [pageSize, orientation, qrSize, qrColNum, qrPadding, fontMargin, paperMargin, fontSize]);
+  }, [pageSize, orientation, qrSize, qrColNum, qrPaddingTop,qrPaddingLeft,qrPaddingRight,qrPaddingBottom, textHighTotal, paperMargin]);
 
   useEffect(() => {
     if (qrColNum > layout.maxCols) {
@@ -209,7 +238,7 @@ export default function App() {
   // 使用 qr-code-styling 生成 dataURL
   const generateStyledQR = async (text, pixelSize) => {
     const options = getQRCodeOptions(pixelSize);
-    options.data = text;
+    options.data = ""+text;
     const qrCode = new QRCodeStyling(options);
     return await qrCode.getRawData("png").then(blob => URL.createObjectURL(blob));
   };
@@ -222,8 +251,8 @@ export default function App() {
 
     const qrs = await Promise.all(
       firstPage.map(async (item) => {
-        const img = await generateStyledQR(item.qrContent, layout.qrPixelPreview);
-        return { text: item.displayText, img, qrContent: item.qrContent };
+        const img = await generateStyledQR(item[qrContentColumnIndex], layout.qrPixelPreview);
+        return { img, item };
       })
     );
 
@@ -239,7 +268,7 @@ export default function App() {
     logoUrl, logoSize, logoMargin, hideBackgroundDots,
     dotsColorType, dotsSolidColor, dotsGradientType, dotsGradientRotation, dotsStartColor, dotsEndColor,
     backgroundColor, dotsStyle, cornersSquareStyle, cornersSquareColor, cornersDotStyle, cornersDotColor,
-    layout.qrPixelPreview,layout.perPage
+    layout.qrPixelPreview, layout.perPage,qrContentColumnIndex
   ]);
 
   const handlePreview = async () => {
@@ -264,14 +293,34 @@ export default function App() {
       orientation: orientation === "portrait" ? "p" : "l",
       unit: "mm",
       // format: pageSize.toLowerCase(),
-      format:[PAPER_TYPE[pageSize].width,PAPER_TYPE[pageSize].height]
+      format: [PAPER_TYPE[pageSize].width, PAPER_TYPE[pageSize].height]
     });
-    // 转换颜色为 RGB
-    const hexToRgb = (hex) => {
-      const bigint = parseInt(hex.slice(1), 16);
-      return [ (bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255 ];
-    };
-    const [r, g, b] = hexToRgb(textColor);
+
+    // 关键：注册所有字体（使用 base64）
+  const fontMap = {  // 映射 value 到注册名
+    arial: 'arial',
+    times: 'times',
+    simhei: 'simhei',
+    simkai: 'simkai',
+    SIMLI: 'SIMLI',
+  };
+
+  // 注册 normal 和 bold
+  Object.keys(fontMap).forEach(fontKey => {
+    const fontName = fontMap[fontKey];
+    const normalKey = `${fontName}-normal`;
+    const boldKey = `${fontName}-bold`;
+
+    if (fontBase64Map[normalKey]) {
+      pdf.addFileToVFS(`${fontName}-normal.ttf`, fontBase64Map[normalKey]);
+      pdf.addFont(`${fontName}-normal.ttf`, fontName, 'normal');
+    }
+    if (fontBase64Map[boldKey]) {
+      pdf.addFileToVFS(`${fontName}-bold.ttf`, fontBase64Map[boldKey]);
+      pdf.addFont(`${fontName}-bold.ttf`, fontName, 'bold');
+    }
+  });
+    
 
     const { qrWidthMm, qrHeightMm, qrColNum: currentCols, rows } = layout;
     let processedCount = 0;
@@ -288,32 +337,42 @@ export default function App() {
 
           const row = Math.floor(i / currentCols);
           const col = i % currentCols;
-          const x = paperMargin + qrPadding + col * (qrWidthMm + qrPadding * 2);
-          const y = paperMargin + qrPadding + row * (qrHeightMm + fontSize + fontMargin  + qrPadding* 2);
+          const x = paperMargin + qrPaddingLeft + col * (qrWidthMm + qrPaddingLeft+qrPaddingRight);
+
+          let y = paperMargin + qrPaddingTop + row * (qrHeightMm + textHighTotal + qrPaddingTop+qrPaddingBottom);
 
           setExportStatus(`正在生成第${p + 1}页第${i + 1}个二维码`);
 
           const item = items[i];
-          const img = await generateStyledQR(item.qrContent, layout.qrPixelPrint);
+          const img = await generateStyledQR(item[qrContentColumnIndex], layout.qrPixelPrint);
 
           processedCount++;
           pdf.addImage(img, "PNG", x, y, qrWidthMm, qrHeightMm);
 
           // 应用文字样式
-          const effectiveFontWeight = textFontWeight >= 700 ? 'bold' : 'normal';  // 简化为 normal 或 bold
-          pdf.setFont(textFont, effectiveFontWeight);  // 移除第三个参数，或传 'normal'
-          // 如果是内置字体，直接用；自定义字体回退到 helvetica
-          if (!['helvetica', 'times', 'courier'].includes(textFont)) {
-            pdf.setFont('helvetica', effectiveFontWeight);  // 回退，避免警告
-          }
-          pdf.setFontSize(mmToPt(fontSize));
-          pdf.setTextColor(textColor);
-          pdf.text(
-            item.displayText,
-            x + qrWidthMm / 2,
-            y + qrHeightMm + fontMargin + fontSize * 0.7,
-            { align: "center", maxWidth: qrWidthMm }
-          );
+          textGroups.map(v => {
+            const effectiveFontWeight = v.textFontWeight >= 700 ? 'bold' : 'normal';  // 简化为 normal 或 bold
+            let fontName = v.textFont;
+            if (!fontMap[fontName]) fontName = 'helvetica';  // 回退
+            pdf.setFont(fontName,"normal", v.textFontWeight);  // 移除第三个参数，或传 'normal'
+            // 如果是内置字体，直接用；自定义字体回退到 helvetica
+            // if (!['helvetica', 'times', 'courier'].includes( v.textFont)) {
+            //   pdf.setFont('helvetica', effectiveFontWeight);  // 回退，避免警告
+            // }
+            pdf.setFontSize(mmToPt(v.fontSize));
+            pdf.setTextColor(v.textColor);
+            const maxWidthMm = qrWidthMm;
+            const displayText=v.coustomTextLabel==""?item[v.dataTextIndex]+"":v.coustomTextLabel + ":" + item[v.dataTextIndex]
+            const textLines = pdf.splitTextToSize(displayText, maxWidthMm);
+            pdf.text(
+              displayText,
+              x + qrWidthMm / 2,
+              y + qrHeightMm + v.fontMargin + v.fontSize * 0.7,
+              { align: "center", maxWidth: qrWidthMm }
+            );
+            y=y+ v.fontSize * 0.7*(textLines.length+1);
+          })
+
 
           await new Promise(resolve => setTimeout(resolve, 20));
           setExportProgress(Math.round((processedCount / allData.length) * 100));
@@ -348,13 +407,25 @@ export default function App() {
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        const items = jsonData
+        //过滤掉空行
+        const validRows = jsonData.filter(row =>
+          row && Array.isArray(row) && row.some(cell => cell !== "" && cell !== null)
+        );
+        //取其中一行数据
+        if (validRows.length > 0) {
+          const firstValidRow = validRows[0];
+          const colCount = firstValidRow.filter(cell => cell !== "" && cell !== null).length;
+          setDataColNumber(colCount);
+        } else {
+          setDataColNumber(0);
+        }
+        const items = validRows
           .filter(row => row && row.length >= 1)
-          .map(row => {
-            const qrContent = row[0] ? String(row[0]).trim() : '';
-            const displayText = row[1] ? String(row[1]).trim() : qrContent;
-            return qrContent ? { qrContent, displayText } : null;
-          })
+          // .map(row => {
+          //   const qrContent = row[0] ? String(row[0]).trim() : '';
+          //   const displayText = row[1] ? String(row[1]).trim() : qrContent;
+          //   return qrContent ? { qrContent, displayText } : null;
+          // })
           .filter(item => item != null);
 
         if (items.length === 0) return message.warning("Excel文件中没有有效数据");
@@ -370,7 +441,7 @@ export default function App() {
   };
 
   // Logo 上传
-  const handleLogoUpload = (file ) => {
+  const handleLogoUpload = (file) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       setLogoUrl(e.target.result);
@@ -416,124 +487,156 @@ export default function App() {
               </div>
             )}
 
-<Radio.Group
-style={{marginTop:10,marginBottom:10}}
-      block
-      options={options}
-      // defaultValue={1}
-      value={radioValue}
-      onChange={(e)=>setRadilValue(e.target.value)}
-      optionType="button"
-      buttonStyle="solid"
-    />
+            <Radio.Group
+              style={{ marginTop: 10, marginBottom: 10 }}
+              block
+              options={options}
+              // defaultValue={1}
+              value={radioValue}
+              onChange={(e) => setRadilValue(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+            />
 
-            {radioValue==1?(<>
+            <div style={{display:radioValue == 1?"unset":"none"}}>
               <Form.Item label="纸张"><Select value={pageSize} onChange={setPageSize}>{Object.keys(PAPER_TYPE).map(key => (<Select.Option key={key} value={key}>{key}</Select.Option>))}</Select></Form.Item>
-            <Form.Item label="方向"><Radio.Group value={orientation} onChange={e => setOrientation(e.target.value)}><Radio.Button value="portrait">纵向</Radio.Button><Radio.Button value="landscape">横向</Radio.Button></Radio.Group></Form.Item>
-            <Form.Item label={`页边距 (${paperMargin}mm)`}><Slider min={0} max={50} value={paperMargin} onChange={setPaperMargin} /></Form.Item>
-            </>):null}
-            {radioValue==2?(<>
-              
-            <Collapse defaultActiveKey={"set"} accordion style={{marginBottom:10}}>
-              <Panel header="码布局" key="set">
-              <Form.Item label={`二维码尺寸 (${qrSize}mm)`}><Slider min={5} max={100} step={0.1} value={qrSize} onChange={setQrSize} /><div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>当前设置下最大可放 {layout.maxCols} 列</div></Form.Item>
-            <Form.Item label={`每行个数 (${qrColNum})`}><Slider min={1} max={layout.maxCols} value={qrColNum} onChange={setQrColNum} disabled={layout.maxCols <= 1} />{layout.maxCols <= 1 && <div style={{ fontSize: 12, color: "#ff4d4f", marginTop: 4 }}>二维码尺寸或页边距过大，无法放置二维码，请调整设置</div>}</Form.Item>
-            <Form.Item label={`二维码间距 (${qrPadding}mm)`}><Slider step={0.1} min={0} max={20} value={qrPadding} onChange={setQrPadding} /></Form.Item>
+              <Form.Item label="方向"><Radio.Group value={orientation} onChange={e => setOrientation(e.target.value)}><Radio.Button value="portrait">纵向</Radio.Button><Radio.Button value="landscape">横向</Radio.Button></Radio.Group></Form.Item>
+              <Form.Item label={`页边距 (${paperMargin}mm)`}><Slider min={0} max={50} value={paperMargin} onChange={setPaperMargin} /></Form.Item>
+              <Form.Item label={"预览缩放: " + previewScale + "%"}><Slider min={30} max={100} value={previewScale} onChange={setPreviewScale} /></Form.Item>
+            </div>
+            <div style={{display:radioValue == 2?"unset":"none"}}>
+
+              <Collapse defaultActiveKey={"context"} accordion style={{ marginBottom: 10 }}>
+              <Panel header="码内容" key="context">
+                  <Form.Item label={`生成二维码内容`}>
+                  <Select value={qrContentColumnIndex} onChange={setQrContentColumnIndex}>
+                    {Array.from({ length: dataColNumber }, (_, index) => index).map(value => {
+                        return <Select.Option key={value} value={value}>第{value + 1}列</Select.Option>
+                    })}
+                </Select>
+                  </Form.Item>
+                  
                 </Panel>
-              <Panel header="Logo 设置" key="logo">
-                <Form.Item label="上传 Logo">
-                  <Upload beforeUpload={handleLogoUpload} showUploadList={false}><Button icon={<UploadOutlined />}>上传图片</Button></Upload>
-                  {logoUrl && <Button onClick={() => setLogoUrl(null)} danger style={{ marginLeft: 8 }}>移除 Logo</Button>}
-                </Form.Item>
-                <Form.Item label={`Logo 尺寸 (${(logoSize * 100).toFixed(0)}%)`}><Slider min={0.1} max={0.4} step={0.01} value={logoSize} onChange={setLogoSize} /></Form.Item>
-                <Form.Item label="Logo 间距"><Slider min={0} max={30} value={logoMargin} onChange={setLogoMargin} /></Form.Item>
-                <Form.Item label="隐藏 Logo 背景点"><Radio.Group value={hideBackgroundDots} onChange={e => setHideBackgroundDots(e.target.value)}><Radio value={true}>是</Radio><Radio value={false}>否</Radio></Radio.Group></Form.Item>
-              </Panel>
+                <Panel header="码布局" key="set">
+                  <Form.Item label={`二维码尺寸 (${qrSize}mm)`}><Slider min={5} max={100} step={0.1} value={qrSize} onChange={setQrSize} /><div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>当前设置下最大可放 {layout.maxCols} 列</div></Form.Item>
+                  <Form.Item label={`每行个数 (${qrColNum})`}><Slider min={1} max={layout.maxCols} value={qrColNum} onChange={setQrColNum} disabled={layout.maxCols <= 1} />{layout.maxCols <= 1 && <div style={{ fontSize: 12, color: "#ff4d4f", marginTop: 4 }}>二维码尺寸或页边距过大，无法放置二维码，请调整设置</div>}</Form.Item>
+                  <Form.Item label={`二维码左间距 (${qrPaddingLeft}mm)`}><Slider step={0.1} min={0} max={20} value={qrPaddingLeft} onChange={setQrPaddingLeft} /></Form.Item>
+                  <Form.Item label={`二维码右间距 (${qrPaddingRight}mm)`}><Slider step={0.1} min={0} max={20} value={qrPaddingRight} onChange={setQrPaddingRight} /></Form.Item>
+                  <Form.Item label={`二维码上间距 (${qrPaddingTop}mm)`}><Slider step={0.1} min={0} max={20} value={qrPaddingTop} onChange={setQrPaddingTop} /></Form.Item>
+                  <Form.Item label={`二维码下间距 (${qrPaddingBottom}mm)`}><Slider step={0.1} min={0} max={20} value={qrPaddingBottom} onChange={setQrPaddingBottom} /></Form.Item>
+                </Panel>
+                <Panel header="Logo 设置" key="logo">
+                  <Form.Item label="上传 Logo">
+                    <Upload beforeUpload={handleLogoUpload} showUploadList={false}><Button icon={<UploadOutlined />}>上传图片</Button></Upload>
+                    {logoUrl && <Button onClick={() => setLogoUrl(null)} danger style={{ marginLeft: 8 }}>移除 Logo</Button>}
+                  </Form.Item>
+                  <Form.Item label={`Logo 尺寸 (${(logoSize * 100).toFixed(0)}%)`}><Slider min={0.1} max={0.4} step={0.01} value={logoSize} onChange={setLogoSize} /></Form.Item>
+                  <Form.Item label="Logo 间距"><Slider min={0} max={30} value={logoMargin} onChange={setLogoMargin} /></Form.Item>
+                  <Form.Item label="隐藏 Logo 背景点"><Radio.Group value={hideBackgroundDots} onChange={e => setHideBackgroundDots(e.target.value)}><Radio value={true}>是</Radio><Radio value={false}>否</Radio></Radio.Group></Form.Item>
+                </Panel>
 
-              <Panel header="码点与颜色" key="dots">
-                <Form.Item label="码点颜色类型"><Radio.Group value={dotsColorType} onChange={e => setDotsColorType(e.target.value)}><Radio value="solid">纯色</Radio><Radio value="gradient">渐变色</Radio></Radio.Group></Form.Item>
-                {dotsColorType === "solid" && <Form.Item label="码点颜色"><ColorPicker value={dotsSolidColor} onChange={(_, hex) => setDotsSolidColor(hex)} /></Form.Item>}
-                {dotsColorType === "gradient" && (
-                  <>
-                    <Form.Item label="渐变类型"><Select value={dotsGradientType} onChange={setDotsGradientType}><Select.Option value="linear">线性</Select.Option><Select.Option value="radial">径向</Select.Option></Select></Form.Item>
-                    {dotsGradientType==="linear" &&(
-                      <Form.Item label="渐变旋转角度"><Slider min={0} max={360} value={dotsGradientRotation} onChange={setDotsGradientRotation} /></Form.Item>
+                <Panel header="码点与颜色" key="dots">
+                  <Form.Item label="码点颜色类型"><Radio.Group value={dotsColorType} onChange={e => setDotsColorType(e.target.value)}><Radio value="solid">纯色</Radio><Radio value="gradient">渐变色</Radio></Radio.Group></Form.Item>
+                  {dotsColorType === "solid" && <Form.Item label="码点颜色"><ColorPicker value={dotsSolidColor} onChange={(_, hex) => setDotsSolidColor(hex)} /></Form.Item>}
+                  {dotsColorType === "gradient" && (
+                    <>
+                      <Form.Item label="渐变类型"><Select value={dotsGradientType} onChange={setDotsGradientType}><Select.Option value="linear">线性</Select.Option><Select.Option value="radial">径向</Select.Option></Select></Form.Item>
+                      {dotsGradientType === "linear" && (
+                        <Form.Item label="渐变旋转角度"><Slider min={0} max={360} value={dotsGradientRotation} onChange={setDotsGradientRotation} /></Form.Item>
+                      )}
+
+                      <Form.Item label="起始颜色"><ColorPicker value={dotsStartColor} onChange={(_, hex) => setDotsStartColor(hex)} /></Form.Item>
+                      <Form.Item label="结束颜色"><ColorPicker value={dotsEndColor} onChange={(_, hex) => setDotsEndColor(hex)} /></Form.Item>
+                    </>
+                  )}
+                  <Form.Item label="码点形状"><Select value={dotsStyle} onChange={setDotsStyle}>
+                    <Select.Option value="square">方形</Select.Option>
+                    <Select.Option value="rounded">圆角</Select.Option>
+                    <Select.Option value="extra-rounded">大圆角</Select.Option>
+                    <Select.Option value="dots">小圆点</Select.Option>
+                    <Select.Option value="classy">优雅</Select.Option>
+                    <Select.Option value="classy-rounded">优雅圆角</Select.Option>
+                  </Select></Form.Item>
+                </Panel>
+
+                <Panel header="码眼设置" key="eyes">
+                  <Form.Item label="码外眼形状"><Select value={cornersSquareStyle} onChange={setCornersSquareStyle}>
+                    <Select.Option value="square">方形</Select.Option>
+                    <Select.Option value="dot">圆点</Select.Option>
+                    <Select.Option value="rounded">圆角</Select.Option>
+                    <Select.Option value="extra-rounded">大圆角</Select.Option>
+                    <Select.Option value="dots">小圆点</Select.Option>
+                    <Select.Option value="classy">优雅</Select.Option>
+                    <Select.Option value="classy-rounded">优雅圆角</Select.Option>
+                  </Select></Form.Item>
+                  <Form.Item label="码外眼颜色"><ColorPicker value={cornersSquareColor} onChange={(_, hex) => setCornersSquareColor(hex)} /></Form.Item>
+                  <Form.Item label="码内眼形状"><Select value={cornersDotStyle} onChange={setCornersDotStyle}>
+                    <Select.Option value="square">方形</Select.Option>
+                    <Select.Option value="dot">圆点</Select.Option>
+                    <Select.Option value="rounded">圆角</Select.Option>
+                    <Select.Option value="extra-rounded">大圆角</Select.Option>
+                    <Select.Option value="dots">小圆点</Select.Option>
+                    <Select.Option value="classy">优雅</Select.Option>
+                    <Select.Option value="classy-rounded">优雅圆角</Select.Option>
+                  </Select></Form.Item>
+                  <Form.Item label="码内眼颜色"><ColorPicker value={cornersDotColor} onChange={(_, hex) => setCornersDotColor(hex)} /></Form.Item>
+                </Panel>
+
+                <Panel header="背景" key="bg">
+                  <Form.Item label="背景颜色"><ColorPicker value={backgroundColor} onChange={(_, hex) => setBackgroundColor(hex)} /></Form.Item>
+                </Panel>
+              </Collapse>
+            </div>
+            <div style={{display:radioValue == 3?"block":"none"}}>
+
+              <div>
+                {textGroups.map(group => (
+                  <div
+                    key={group.id}
+                    style={{
+                      border: '1px solid #ddd',
+                      padding: 16,
+                      borderRadius: 8,
+                      position: 'relative',
+                      marginBottom: 10
+                    }}
+                  >
+                    <QrFontSetting
+                      id={group.id}
+                      initialValues={group}
+                      onChange={(id, values) => updateTextGroup(id, values)}
+                      dataColNumber={dataColNumber}
+                    />
+
+                    {textGroups.length > 1 && (
+                      <Button
+                      type="primary" danger
+                        size="small"
+                        style={{ position: 'absolute', top: 10, right: 10 }}
+                        onClick={() => removeTextGroup(group.id)}
+                      >
+                        <DeleteOutlined />
+                      </Button>
                     )}
-                    
-                    <Form.Item label="起始颜色"><ColorPicker value={dotsStartColor} onChange={(_, hex) => setDotsStartColor(hex)} /></Form.Item>
-                    <Form.Item label="结束颜色"><ColorPicker value={dotsEndColor} onChange={(_, hex) => setDotsEndColor(hex)} /></Form.Item>
-                  </>
-                )}
-                <Form.Item label="码点形状"><Select value={dotsStyle} onChange={setDotsStyle}>
-                  <Select.Option value="square">方形</Select.Option>
-                  <Select.Option value="rounded">圆角</Select.Option>
-                  <Select.Option value="extra-rounded">大圆角</Select.Option>
-                  <Select.Option value="dots">小圆点</Select.Option>
-                  <Select.Option value="classy">优雅</Select.Option>
-                  <Select.Option value="classy-rounded">优雅圆角</Select.Option>
-                </Select></Form.Item>
-              </Panel>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <Button
+                  type="primary"
+                  onClick={addTextGroup}
+                >
+                  +
+                </Button>
+              </div>
+            </div>
 
-              <Panel header="码眼设置" key="eyes">
-                <Form.Item label="码外眼形状"><Select value={cornersSquareStyle} onChange={setCornersSquareStyle}>
-                  <Select.Option value="square">方形</Select.Option>
-                  <Select.Option value="dot">圆点</Select.Option>
-                  <Select.Option value="rounded">圆角</Select.Option>
-                  <Select.Option value="extra-rounded">大圆角</Select.Option>
-                  <Select.Option value="dots">小圆点</Select.Option>
-                  <Select.Option value="classy">优雅</Select.Option>
-                  <Select.Option value="classy-rounded">优雅圆角</Select.Option>
-                </Select></Form.Item>
-                <Form.Item label="码外眼颜色"><ColorPicker value={cornersSquareColor} onChange={(_, hex) => setCornersSquareColor(hex)} /></Form.Item>
-                <Form.Item label="码内眼形状"><Select value={cornersDotStyle} onChange={setCornersDotStyle}>
-                <Select.Option value="square">方形</Select.Option>
-                  <Select.Option value="dot">圆点</Select.Option>
-                  <Select.Option value="rounded">圆角</Select.Option>
-                  <Select.Option value="extra-rounded">大圆角</Select.Option>
-                  <Select.Option value="dots">小圆点</Select.Option>
-                  <Select.Option value="classy">优雅</Select.Option>
-                  <Select.Option value="classy-rounded">优雅圆角</Select.Option>
-                </Select></Form.Item>
-                <Form.Item label="码内眼颜色"><ColorPicker value={cornersDotColor} onChange={(_, hex) => setCornersDotColor(hex)} /></Form.Item>
-              </Panel>
 
-              <Panel header="背景" key="bg">
-                <Form.Item label="背景颜色"><ColorPicker value={backgroundColor} onChange={(_, hex) => setBackgroundColor(hex)} /></Form.Item>
-              </Panel>
-            </Collapse>
-            </>):null}
-            {radioValue==3?(<>
-                <Form.Item label="字体">
-                  <Select value={textFont} onChange={setTextFont}>
-                    {fontOptions.map(f => (
-                      <Select.Option key={f.value} value={f.value}>{f.label}</Select.Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-                <Form.Item label="字重">
-                  <Select value={textFontWeight} onChange={setTextFontWeight}>
-                    {fontWeightOptions.map(w => (
-                      <Select.Option key={w.value} value={w.value}>{w.label}</Select.Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-                <Form.Item label="字体颜色">
-                  <ColorPicker value={textColor} onChange={(_, hex) => setTextColor(hex)} />
-                </Form.Item>
-                <Form.Item label={`文字大小 (${fontSize}mm)`}>
-                  <Slider step={0.1} min={0.1} max={15} value={fontSize} onChange={setFontSize} />
-                </Form.Item>
-                <Form.Item label={`文字间距 (${fontMargin}mm)`}>
-                  <Slider step={0.1} min={0} max={15} value={fontMargin} onChange={setFontMargin} />
-                </Form.Item>
-              </>):null}
-            
-            
-            
-            <Form.Item label={"预览缩放: "+previewScale+"%"}><Slider min={30} max={100} value={previewScale} onChange={setPreviewScale} /></Form.Item>
 
-            
-            
+
+
+
+
 
             <Button type="primary" size="large" icon={<FilePdfOutlined />} block onClick={handleExportPDF} disabled={allData.length === 0 || isExporting} style={{ marginTop: 20 }} loading={isExporting}>
               {isExporting ? "正在导出..." : "导出全部为高清PDF"}
@@ -568,33 +671,32 @@ style={{marginTop:10,marginBottom:10}}
                       return (
                         <div key={i} style={{
                           position: "absolute",
-                          left: `${  col * (layout.qrWidthMm + qrPadding * 2)}mm`,
-                          top: `${ row * (layout.qrHeightMm + fontSize + fontMargin  + qrPadding* 2)}mm`,
+                          left: `${col * (layout.qrWidthMm + qrPaddingLeft+qrPaddingRight)}mm`,
+                          top: `${row * (layout.qrHeightMm + textHighTotal + qrPaddingTop+qrPaddingBottom)}mm`,
                           width: `${layout.qrWidthMm}mm`,
-                          padding:`${qrPadding}mm`,
+                          padding: `${qrPaddingTop}mm ${qrPaddingRight}mm ${qrPaddingBottom}mm ${qrPaddingLeft}mm`,
                           textAlign: "center",
                           boxSizing: "unset"
                         }}>
-                          <img src={qr.img} alt={qr.text} style={{ width: "100%", height: "100%", display: "block" }} />
-                          
-                          <div style={{
-                            marginTop: `${fontMargin}mm`,
-                            fontSize: `${fontSize}mm`,
-                            fontFamily: textFont === "helvetica" ? "Helvetica" : 
-                                         textFont === "times" ? "'Times New Roman'" :
-                                         textFont === "courier" ? "Courier" :
-                                         textFont === "simsun" ? "SimSun, serif" :
-                                         textFont === "simhei" ? "SimHei, sans-serif" :
-                                         textFont === "microsoftyahei" ? "Microsoft YaHei, sans-serif" :
-                                         textFont === "kaiti" ? "KaiTi, serif" :
-                                         textFont === "fangsong" ? "FangSong, serif" : "sans-serif",
-                            fontWeight: textFontWeight,
-                            color: textColor,
-                            wordBreak: "break-all",
-                            lineHeight: 1
-                          }}>
-                            {qr.text}
-                          </div>
+                          <img src={qr.img} style={{ width: "100%", height: "100%", display: "block" }} />
+
+                          {textGroups.map(item => {
+                            return (<div style={{
+                              marginTop: `${item.fontMargin}mm`,
+                              fontSize: `${item.fontSize}mm`,
+                              fontFamily: item.textFont,
+                              fontWeight: item.textFontWeight,
+                              color: item.textColor,
+                              wordBreak: "break-all",
+                              lineHeight: 1
+                            }}>
+                              {item.coustomTextLabel==""?qr.item[item.dataTextIndex]:item.coustomTextLabel+":"+qr.item[item.dataTextIndex]}
+                              
+                             
+                            </div>
+                            )
+                          })}
+
                         </div>
                       );
                     })}
@@ -623,7 +725,7 @@ style={{marginTop:10,marginBottom:10}}
         </Modal>
 
         <Modal open={showConfirmClose} centered width={400} closable={false} onCancel={cancelAbortExport}
-          footer={[<Button key="cancel" onClick={cancelAbortExport}>取消</Button>,<Button key="confirm" type="primary" danger onClick={confirmAbortExport}>确认终止</Button>]}>
+          footer={[<Button key="cancel" onClick={cancelAbortExport}>取消</Button>, <Button key="confirm" type="primary" danger onClick={confirmAbortExport}>确认终止</Button>]}>
           <div style={{ padding: "20px", textAlign: "center" }}>
             <CloseOutlined style={{ fontSize: 48, color: "#ff4d4f", marginBottom: 16 }} />
             <Title level={4}>确认终止导出？</Title>
