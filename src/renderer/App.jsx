@@ -33,7 +33,7 @@ const { Title } = Typography;
 const { Panel } = Collapse;
 
 // 单位转换函数（保持不变）
-const mmToPt = (mm) => Math.floor(mm * 2.83464566929);
+const mmToPt = (mm) => Math.ceil(mm * (72 / 25.4));
 const PRINT_DPI = 300;
 const PREVIEW_DPI = 150;
 
@@ -61,11 +61,11 @@ const options = [
 
 export default function App() {
   const qrItemRef = useRef(null);
-  const [qrSize, setQrSize] = useState(20);
+  const [qrSize, setQrSize] = useState(21);
   const [qrColNum, setQrColNum] = useState(8);
   const [pageSize, setPageSize] = useState("A4");
   const [orientation, setOrientation] = useState("portrait");
-  const [previewScale, setPreviewScale] = useState(85);
+  const [previewScale, setPreviewScale] = useState(85);//注意这里的缩放，不能是100%，85%是接近实际纸张大小的尺寸，因此后续的高宽之类的尺寸需要额外补偿15%，因为默认是以100%缩放为基准，但我们是以85%为基准
   ;
   const [paperMargin, setPaperMargin] = useState(6);
   const [qrPaddingTop, setQrPaddingTop] = useState(1.6);
@@ -147,12 +147,12 @@ export default function App() {
   };
 
   const removeTextGroup = (id) => {
-    if (textGroups.length <= 1) return;
+    // if (textGroups.length <= 1) return;
     setTextGroups(prev => prev.filter(g => g.id !== id));
   };
   const textHighTotal = useMemo(() => {
     return textGroups.reduce((sum, item) => {
-      return sum + item.fontSize + item.fontMargin;
+      return sum + (item.fontSize + item.fontMargin);
     }, 0);
   }, [textGroups])
 
@@ -164,29 +164,29 @@ export default function App() {
     const pageHeightMm = isPortrait ? size.height : size.width;
     const usableWidthMm = pageWidthMm - paperMargin * 2;
     const usableHeightMm = pageHeightMm - paperMargin * 2;
-    const qrUnitWidthMm = qrSize + qrPaddingLeft+ qrPaddingRight;
+    const qrUnitWidthMm = (qrSize + qrPaddingLeft+ qrPaddingRight);
     const maxCols = Math.max(1, Math.floor(usableWidthMm / qrUnitWidthMm));
     let currentCols = qrColNum;
     if (currentCols > maxCols) currentCols = maxCols;
-    const rowHeightMm = qrSize + qrPaddingTop+qrPaddingBottom;
+    const rowHeightMm = (qrSize + qrPaddingTop+qrPaddingBottom);
 
 
     const rows = Math.max(1, Math.floor(usableHeightMm / (rowHeightMm + textHighTotal)));
     const perPage = currentCols * rows;
 
     return {
-      pageWidthMm,
-      pageHeightMm,
-      usableWidthMm,
-      usableHeightMm,
+      pageWidthMm:pageWidthMm,
+      pageHeightMm:pageHeightMm,
+      usableWidthMm:usableWidthMm,
+      usableHeightMm:usableHeightMm,
       qrWidthMm: qrSize,
       qrHeightMm: qrSize,
       qrColNum: currentCols,
       rows,
       perPage,
       maxCols,
-      qrPixelPrint: Math.floor((qrSize / 25.4) * PRINT_DPI),
-      qrPixelPreview: Math.floor((qrSize / 25.4) * PREVIEW_DPI),
+      qrPixelPrint: ((qrSize / 25.4) * PRINT_DPI),
+      qrPixelPreview: ((qrSize / 25.4) * PRINT_DPI),
     };
   }, [pageSize, orientation, qrSize, qrColNum, qrPaddingTop,qrPaddingLeft,qrPaddingRight,qrPaddingBottom, textHighTotal, paperMargin]);
 
@@ -208,7 +208,6 @@ export default function App() {
   const getQRCodeOptions = (pixelSize) => ({
     width: pixelSize,
     height: pixelSize,
-    data: "https://example.com", // 临时，实际在生成时替换
     margin: 0,
     qrOptions: { errorCorrectionLevel: "H" },
     dotsOptions: {
@@ -222,6 +221,7 @@ export default function App() {
         ]
       } : undefined,
       type: dotsStyle,
+      roundSize:false,//取消二维码的边距
     },
     backgroundOptions: { color: backgroundColor },
     image: logoUrl || undefined,
@@ -292,7 +292,7 @@ export default function App() {
     const pdf = new jsPDF({
       orientation: orientation === "portrait" ? "p" : "l",
       unit: "mm",
-      // format: pageSize.toLowerCase(),
+      // format: "A4",
       format: [PAPER_TYPE[pageSize].width, PAPER_TYPE[pageSize].height]
     });
 
@@ -345,9 +345,11 @@ export default function App() {
 
           const item = items[i];
           const img = await generateStyledQR(item[qrContentColumnIndex], layout.qrPixelPrint);
+          // const img = await generateStyledQR(item[qrContentColumnIndex], mmToPt(qrSize));
 
           processedCount++;
           pdf.addImage(img, "PNG", x, y, qrWidthMm, qrHeightMm);
+          // pdf.addImage(img, "PNG", x, y, 20, 20);
 
           // 应用文字样式
           textGroups.map(v => {
@@ -370,7 +372,7 @@ export default function App() {
               y + qrHeightMm + v.fontMargin + v.fontSize * 0.7,
               { align: "center", maxWidth: qrWidthMm }
             );
-            y=y+ v.fontSize * 0.7*(textLines.length+1);
+            y=y+ v.fontSize * 0.7*(textLines.length+1)+ v.fontMargin;
           })
 
 
@@ -502,7 +504,7 @@ export default function App() {
               <Form.Item label="纸张"><Select value={pageSize} onChange={setPageSize}>{Object.keys(PAPER_TYPE).map(key => (<Select.Option key={key} value={key}>{key}</Select.Option>))}</Select></Form.Item>
               <Form.Item label="方向"><Radio.Group value={orientation} onChange={e => setOrientation(e.target.value)}><Radio.Button value="portrait">纵向</Radio.Button><Radio.Button value="landscape">横向</Radio.Button></Radio.Group></Form.Item>
               <Form.Item label={`页边距 (${paperMargin}mm)`}><Slider min={0} max={50} value={paperMargin} onChange={setPaperMargin} /></Form.Item>
-              <Form.Item label={"预览缩放: " + previewScale + "%"}><Slider min={30} max={100} value={previewScale} onChange={setPreviewScale} /></Form.Item>
+              <Form.Item label={"预览缩放: " + previewScale + "%"+`${previewScale==85?"(实际尺寸)":""}`}><Slider min={30} max={100} value={previewScale} onChange={setPreviewScale} /></Form.Item>
             </div>
             <div style={{display:radioValue == 2?"unset":"none"}}>
 
@@ -518,7 +520,7 @@ export default function App() {
                   
                 </Panel>
                 <Panel header="码布局" key="set">
-                  <Form.Item label={`二维码尺寸 (${qrSize}mm)`}><Slider min={5} max={100} step={0.1} value={qrSize} onChange={setQrSize} /><div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>当前设置下最大可放 {layout.maxCols} 列</div></Form.Item>
+                  <Form.Item label={`二维码尺寸 (${qrSize}mm)`}><Slider min={5} max={100} step={1} value={qrSize} onChange={setQrSize} /><div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>当前设置下最大可放 {layout.maxCols} 列</div></Form.Item>
                   <Form.Item label={`每行个数 (${qrColNum})`}><Slider min={1} max={layout.maxCols} value={qrColNum} onChange={setQrColNum} disabled={layout.maxCols <= 1} />{layout.maxCols <= 1 && <div style={{ fontSize: 12, color: "#ff4d4f", marginTop: 4 }}>二维码尺寸或页边距过大，无法放置二维码，请调整设置</div>}</Form.Item>
                   <Form.Item label={`二维码左间距 (${qrPaddingLeft}mm)`}><Slider step={0.1} min={0} max={20} value={qrPaddingLeft} onChange={setQrPaddingLeft} /></Form.Item>
                   <Form.Item label={`二维码右间距 (${qrPaddingRight}mm)`}><Slider step={0.1} min={0} max={20} value={qrPaddingRight} onChange={setQrPaddingRight} /></Form.Item>
@@ -608,7 +610,7 @@ export default function App() {
                       dataColNumber={dataColNumber}
                     />
 
-                    {textGroups.length > 1 && (
+                    {textGroups.length > 0 && (
                       <Button
                       type="primary" danger
                         size="small"
@@ -678,7 +680,7 @@ export default function App() {
                           textAlign: "center",
                           boxSizing: "unset"
                         }}>
-                          <img src={qr.img} style={{ width: "100%", height: "100%", display: "block" }} />
+                          <img src={qr.img} style={{ width: `${layout.qrWidthMm}mm`, height: `${layout.qrWidthMm}mm`, display: "block" }} />
 
                           {textGroups.map(item => {
                             return (<div style={{
