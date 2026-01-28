@@ -25,7 +25,8 @@ import * as XLSX from 'xlsx';
 import "antd/dist/reset.css";
 import { PAPER_TYPE } from "./const";
 import QrFontSetting from "./qrFontSetting";
-import './assets/fonts.css';
+import DynamicFontLoader from "./DynamicFontLoader";
+// import './assets/fonts.css';
 
 
 const { Sider, Content } = Layout;
@@ -303,23 +304,44 @@ export default function App() {
     simhei: 'simhei',
     simkai: 'simkai',
     SIMLI: 'SIMLI',
+    sc:"sc",
   };
 
-  // 注册 normal 和 bold
-  Object.keys(fontMap).forEach(fontKey => {
-    const fontName = fontMap[fontKey];
-    const normalKey = `${fontName}-normal`;
-    const boldKey = `${fontName}-bold`;
+  // // 注册 normal 和 bold
+  // Object.keys(fontMap).forEach(fontKey => {
+  //   const fontName = fontMap[fontKey];
+  //   const normalKey = `${fontName}`;
+  //   const boldKey = `${fontName}-bold`;
 
-    if (fontBase64Map[normalKey]) {
-      pdf.addFileToVFS(`${fontName}-normal.ttf`, fontBase64Map[normalKey]);
-      pdf.addFont(`${fontName}-normal.ttf`, fontName, 'normal');
-    }
-    if (fontBase64Map[boldKey]) {
-      pdf.addFileToVFS(`${fontName}-bold.ttf`, fontBase64Map[boldKey]);
-      pdf.addFont(`${fontName}-bold.ttf`, fontName, 'bold');
-    }
+  //   if (fontBase64Map[normalKey]) {
+  //     pdf.addFileToVFS(`${fontName}.ttf`, fontBase64Map[normalKey]);
+  //     pdf.addFont(`${fontName}.ttf`, fontName, 'normal');
+  //   }
+  //   if (fontBase64Map[boldKey]) {
+  //     pdf.addFileToVFS(`${fontName}-bold.ttf`, fontBase64Map[boldKey]);
+  //     pdf.addFont(`${fontName}-bold.ttf`, fontName, 'bold');
+  //   }
+  // });
+
+  // 关键：注册所有字体（使用 base64）
+Object.keys(fontBase64Map).forEach(fontKey => {
+  const fontInfo = fontBase64Map[fontKey];
+  const family = fontInfo.family;                 // 注册时使用的字体家族名
+  const weights = fontInfo.weights;
+
+  Object.keys(weights).forEach(weightKey => {
+    const weightInfo = weights[weightKey];
+    const ttfFileName = weightInfo.ttf.replace('./', ''); // 去掉开头的 './'，得到如 'arial.ttf'
+    const base64Data = weightInfo.base64;
+    const style = weightInfo.weight;               // 'normal' 或 'bold'
+
+    // 添加字体文件到虚拟文件系统
+    pdf.addFileToVFS(ttfFileName, base64Data);
+    
+    // 注册字体（family 为字体族名，style 为 normal/bold）
+    pdf.addFont(ttfFileName, family, style);
   });
+});
     
 
     const { qrWidthMm, qrHeightMm, qrColNum: currentCols, rows } = layout;
@@ -353,14 +375,10 @@ export default function App() {
 
           // 应用文字样式
           textGroups.map(v => {
-            const effectiveFontWeight = v.textFontWeight >= 700 ? 'bold' : 'normal';  // 简化为 normal 或 bold
+            
             let fontName = v.textFont;
-            if (!fontMap[fontName]) fontName = 'helvetica';  // 回退
             pdf.setFont(fontName,"normal", v.textFontWeight);  // 移除第三个参数，或传 'normal'
-            // 如果是内置字体，直接用；自定义字体回退到 helvetica
-            // if (!['helvetica', 'times', 'courier'].includes( v.textFont)) {
-            //   pdf.setFont('helvetica', effectiveFontWeight);  // 回退，避免警告
-            // }
+
             pdf.setFontSize(mmToPt(v.fontSize));
             pdf.setTextColor(v.textColor);
             const maxWidthMm = qrWidthMm;
@@ -468,6 +486,7 @@ export default function App() {
 
   return (
     <>
+      <DynamicFontLoader />
       <Layout style={{ height: "100vh" }}>
         <Sider width={560} style={{ background: "#fff", padding: 20, overflowY: "auto" }}>
           <Title level={4}>批量二维码生成器（高清打印）</Title>

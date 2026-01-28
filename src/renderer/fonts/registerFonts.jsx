@@ -1,2 +1,2 @@
 
-export { fontBase64Map } from './fontBase64.js';
+export { fontBase64Map } from './fontBase64';

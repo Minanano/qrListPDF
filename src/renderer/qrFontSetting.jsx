@@ -1,32 +1,13 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
-    Layout,
     Select,
-    Radio,
-    Slider,
-    Typography,
     Form,
     Input,
-    Button,
-    Space,
-    Upload,
-    message,
-    Modal,
-    Progress,
-    Alert,
-    Collapse,
     ColorPicker,
 } from "antd";
+import { fontBase64Map } from "./fonts/fontBase64";
 
 
-
-const fontOptions = [
-    { value: "arial", label: "Arial" },
-    { value: "times", label: "Times New Roman" },
-    { value: "simhei", label: "黑体" },
-    { value: "simkai", label: "楷体" },
-    { value: "SIMLI", label: "隶书" },
-];
 
 
 
@@ -48,6 +29,31 @@ const QrFontSetting = ({ id,                       // 每个实例的唯一标�
     const [fontMargin, setFontMargin] = useState(0.5)
     const [coustomTextLabel, setCoustomTextLabel] = useState("");
     const [dataTextIndex, setDataTextIndex] = useState(0);//文字显示第几列
+
+    const fontOptions = useMemo(() => {
+        return Object.keys(fontBase64Map).map(key => ({
+            value: key,
+            label: fontBase64Map[key].label,
+        }));
+    }, []);
+    
+    // 根据当前字体动态计算可用字重
+    const availableWeights = useMemo(() => {
+        const weights = fontBase64Map[textFont]?.weights || {};
+        return Object.keys(weights).map(weightKey => {
+            const weight = weights[weightKey].weight;
+            return {
+                value: weight,
+                label: weight === "bold" ? "加粗" : "常规",
+            };
+        });
+    }, [textFont]);
+    useEffect(() => {
+        const hasCurrentWeight = availableWeights.some(opt => opt.value === textFontWeight);
+        if (!hasCurrentWeight && availableWeights.length > 0) {
+            setTextFontWeight("normal"); // 所有字体至少有 normal
+        }
+    }, [textFont, availableWeights, textFontWeight]);
 
     // 每次变化都通知父组件
     const notifyChange = () => {
@@ -84,18 +90,22 @@ const QrFontSetting = ({ id,                       // 每个实例的唯一标�
             </Form>
             <Form layout="inline" style={{marginBottom:10}}>
             <Form.Item label="字体">
-                <Select value={textFont} onChange={setTextFont} placeholder="字体">
-                    {fontOptions.map(f => (
-                        <Select.Option key={f.value} value={f.value}>{f.label}</Select.Option>
-                    ))}
-                </Select>
+                <Select value={textFont} onChange={setTextFont}>
+                        {fontOptions.map(f => (
+                            <Select.Option key={f.value} value={f.value}>
+                                {f.label}
+                            </Select.Option>
+                        ))}
+                    </Select>
             </Form.Item>
             <Form.Item label="字重">
-                <Select value={textFontWeight} onChange={setTextFontWeight} placeholder="字重">
-                    {fontWeightOptions.map(w => (
-                        <Select.Option key={w.value} value={w.value}>{w.label}</Select.Option>
-                    ))}
-                </Select>
+                <Select value={textFontWeight} onChange={setTextFontWeight}>
+                        {availableWeights.map(w => (
+                            <Select.Option key={w.value} value={w.value}>
+                                {w.label}
+                            </Select.Option>
+                        ))}
+                    </Select>
             </Form.Item>
 
             <Form.Item label="字体大小">
